@@ -14,3 +14,4 @@
 *.sql
 *.png
 venv/
+config/backend_config.yaml
