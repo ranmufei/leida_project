@@ -231,6 +231,7 @@ class NMCRadarImageDownloader:
                     beijing_time=beijing_time,
                     url=url,
                     file_path=str(local_path),
+                    filename=filename,
                     status='success'
                 )
 
@@ -249,6 +250,7 @@ class NMCRadarImageDownloader:
                         beijing_time=beijing_time,
                         url=url,
                         file_path=None,
+                        filename=filename,
                         status='failed',
                         error_message=str(e)
                     )
@@ -260,6 +262,7 @@ class NMCRadarImageDownloader:
         beijing_time: datetime,
         url: str,
         file_path: Optional[str],
+        filename: str,
         status: str,
         error_message: str = None
     ):
@@ -274,7 +277,8 @@ class NMCRadarImageDownloader:
             if existing:
                 # 更新现有记录
                 existing.download_url = url
-                existing.file_path = file_path
+                if file_path:  # 只有在成功下载时才更新 file_path
+                    existing.file_path = file_path
                 existing.download_time = datetime.now() if status == 'success' else None
                 existing.download_status = status
                 existing.error_message = error_message
@@ -282,8 +286,9 @@ class NMCRadarImageDownloader:
                 # 创建新记录
                 radar_image = RadarImage(
                     observation_time=beijing_time,
+                    filename=filename,
                     download_url=url,
-                    file_path=file_path,
+                    file_path=file_path or '',  # 失败时使用空字符串
                     download_time=datetime.now() if status == 'success' else None,
                     download_status=status,
                     error_message=error_message
