@@ -15,3 +15,4 @@
 *.png
 venv/
 config/backend_config.yaml
+backend/app/core/config.py
