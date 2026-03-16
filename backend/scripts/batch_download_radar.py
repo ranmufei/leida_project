@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
-CMA雷达图片批量下载脚本
+NMC雷达图片批量下载脚本（使用NMC直接URL方式）
 
 功能:
-- 从CMA API批量下载雷达图片
-- 支持指定下载数量
+- 从NMC批量下载雷达图片（每6分钟一张）
+- 支持指定下载数量或时间范围
 - 自动去重（断点续传）
 - 完整的进度显示
-- 生成详细报告
+- 自动处理UTC到北京时间转换
 
 使用方法:
 python3 batch_download_radar.py --count 50
-python3 batch_download_radar.py --count 100 --force
+python3 batch_download_radar.py --hours 24
+python3 batch_download_radar.py --start "2026-03-15 00:00:00" --end "2026-03-16 00:00:00"
 """
 
 import os
 import sys
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # 添加项目路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from app.services.download_service_real import RealRadarImageDownloader
+from app.services.download_service_nmc import NMCRadarImageDownloader
 from app.core.database import SessionLocal
 from app.models.radar_image import RadarImage
 
@@ -32,7 +33,7 @@ from app.models.radar_image import RadarImage
 def print_banner():
     """打印横幅"""
     print("=" * 80)
-    print("🌤️  CMA雷达图片批量下载工具".center(80))
+    print("🌤️  NMC雷达图片批量下载工具".center(80))
     print("=" * 80)
     print()
 
@@ -96,10 +97,8 @@ def generate_report(stats, start_time, end_time):
 
         report["latest_downloads"] = [
             {
-                "filename": img.filename,
-                "original_filename": img.original_filename,
                 "observation_time": img.observation_time.isoformat(),
-                "file_size": img.file_size,
+                "file_path": img.file_path,
                 "download_url": img.download_url
             }
             for img in latest
@@ -111,9 +110,9 @@ def generate_report(stats, start_time, end_time):
     return report
 
 
-def batch_download(count: int = 50, force: bool = False):
+def batch_download_by_count(count: int = 50, force: bool = False):
     """
-    批量下载雷达图片
+    按数量批量下载雷达图片
 
     Args:
         count: 下载数量
@@ -121,69 +120,35 @@ def batch_download(count: int = 50, force: bool = False):
     """
     print_banner()
 
+    # 计算时间范围（每6分钟一张）
+    downloader = NMCRadarImageDownloader()
+    hours = (count * downloader.INTERVAL_MINUTES) // 60 + 1
+
+    end_time = datetime.now()
+    start_time = end_time - timedelta(hours=hours)
+
     # 显示配置
     print(f"📋 下载配置:")
-    print(f"   下载数量: {count} 张")
+    print(f"   目标数量: {count} 张（约 {hours} 小时数据）")
     print(f"   强制下载: {'是' if force else '否（跳过已下载）'}")
+    print(f"   时间范围: {start_time.strftime('%Y-%m-%d %H:%M')} ~ {end_time.strftime('%Y-%m-%d %H:%M')}")
     print(f"   数据目录: ../data/raw")
     print()
 
-    # 创建下载器
-    print("⚙️  初始化下载器...")
-    downloader = RealRadarImageDownloader()
-
     # 开始下载
-    start_time = datetime.now()
-    print(f"\n🚀 开始下载: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    start = datetime.now()
+    print(f"\n🚀 开始下载: {start.strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
-    # 分批下载（每批10张）
-    batch_size = 10
-    downloaded = 0
-    total_stats = {
-        'total': 0,
-        'success': 0,
-        'failed': 0,
-        'skipped': 0
-    }
-
-    while downloaded < count:
-        current_batch = min(batch_size, count - downloaded)
-
-        print(f"\n📦 批次 {downloaded // batch_size + 1}: 下载 {current_batch} 张")
-        print("-" * 80)
-
-        stats = downloader.download_latest_from_api(
-            count=current_batch,
-            force=force
-        )
-
-        # 更新统计
-        for key in total_stats:
-            total_stats[key] += stats.get(key, 0)
-
-        downloaded += current_batch
-
-        print(f"\n批次完成: 成功 {stats.get('success', 0)}, 跳过 {stats.get('skipped', 0)}, 失败 {stats.get('failed', 0)}")
-
-        # 如果全部失败，停止下载
-        if stats.get('failed', 0) == current_batch:
-            print("\n⚠️  连续失败，停止下载")
-            break
-
-        # 短暂延迟，避免请求过快
-        if downloaded < count:
-            print("⏳ 等待 2 秒...")
-            time.sleep(2)
-
-    end_time = datetime.now()
+    stats = downloader.download_range(start_time, end_time, force=force)
+    end = datetime.now()
 
     # 打印最终统计
-    print_statistics(total_stats)
+    print_statistics(stats)
 
     # 生成报告
     print("\n📝 生成报告...")
-    report = generate_report(total_stats, start_time, end_time)
+    report = generate_report(stats, start, end)
 
     # 保存报告
     report_file = Path("../logs/download_report.json")
@@ -194,36 +159,64 @@ def batch_download(count: int = 50, force: bool = False):
 
     print(f"\n📄 报告已保存: {report_file.absolute()}")
 
-    # 显示文件信息
-    print("\n💾 下载的文件:")
-    print("-" * 80)
-
-    db = SessionLocal()
-    try:
-        latest = db.query(RadarImage).filter(
-            RadarImage.download_status == 'success'
-        ).order_by(RadarImage.download_time.desc()).limit(10).all()
-
-        for img in latest:
-            size_mb = img.file_size / (1024 * 1024) if img.file_size else 0
-            print(f"  {img.filename}")
-            print(f"    时间: {img.observation_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"    大小: {size_mb:.2f} MB")
-            print(f"    原文件: {img.original_filename}")
-            print()
-
-    finally:
-        db.close()
-
     # 总结
-    duration = (end_time - start_time).total_seconds()
+    duration = (end - start).total_seconds()
     print("=" * 80)
     print(f"✅ 下载完成!".center(80))
     print(f"总耗时: {duration:.2f} 秒")
-    print(f"平均速度: {duration/max(total_stats['success'], 1):.2f} 秒/张")
+    print(f"平均速度: {duration/max(stats['success'], 1):.2f} 秒/张")
     print("=" * 80)
 
-    return total_stats
+    return stats
+
+
+def batch_download_by_range(
+    start_time: datetime,
+    end_time: datetime,
+    force: bool = False
+):
+    """
+    按时间范围批量下载雷达图片
+
+    Args:
+        start_time: 开始时间
+        end_time: 结束时间
+        force: 是否强制重新下载
+    """
+    print_banner()
+
+    # 计算预计数量
+    downloader = NMCRadarImageDownloader()
+    total_minutes = int((end_time - start_time).total_seconds() // 60)
+    estimated_count = total_minutes // downloader.INTERVAL_MINUTES
+
+    # 显示配置
+    print(f"📋 下载配置:")
+    print(f"   开始时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"   结束时间: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"   预计数量: 约 {estimated_count} 张")
+    print(f"   强制下载: {'是' if force else '否（跳过已下载）'}")
+    print()
+
+    # 开始下载
+    start = datetime.now()
+    print(f"\n🚀 开始下载: {start.strftime('%Y-%m-%d %H:%M:%S')}")
+    print()
+
+    stats = downloader.download_range(start_time, end_time, force=force)
+    end = datetime.now()
+
+    # 打印最终统计
+    print_statistics(stats)
+
+    # 总结
+    duration = (end - start).total_seconds()
+    print("=" * 80)
+    print(f"✅ 下载完成!".center(80))
+    print(f"总耗时: {duration:.2f} 秒")
+    print("=" * 80)
+
+    return stats
 
 
 def main():
@@ -231,26 +224,50 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='CMA雷达图片批量下载工具',
+        description='NMC雷达图片批量下载工具',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  # 下载50张图片
+  # 下载最近50张图片（约5小时数据）
   python3 batch_download_radar.py --count 50
 
-  # 强制重新下载100张（覆盖已存在的）
-  python3 batch_download_radar.py --count 100 --force
+  # 下载最近24小时的数据
+  python3 batch_download_radar.py --hours 24
 
-  # 下载最近20张图片
-  python3 batch_download_radar.py --count 20
+  # 下载指定时间范围的数据
+  python3 batch_download_radar.py --start "2026-03-15 00:00:00" --end "2026-03-16 00:00:00"
+
+  # 强制重新下载
+  python3 batch_download_radar.py --count 50 --force
         '''
     )
 
     parser.add_argument(
         '--count',
         type=int,
-        default=50,
-        help='下载数量（默认: 50）'
+        default=0,
+        help='下载数量（每6分钟一张）'
+    )
+
+    parser.add_argument(
+        '--hours',
+        type=float,
+        default=0,
+        help='下载最近N小时的数据'
+    )
+
+    parser.add_argument(
+        '--start',
+        type=str,
+        default=None,
+        help='开始时间 (格式: YYYY-MM-DD HH:MM:SS)'
+    )
+
+    parser.add_argument(
+        '--end',
+        type=str,
+        default=None,
+        help='结束时间 (格式: YYYY-MM-DD HH:MM:SS)'
     )
 
     parser.add_argument(
@@ -261,8 +278,32 @@ def main():
 
     args = parser.parse_args()
 
+    # 解析参数
+    if args.start and args.end:
+        # 按时间范围下载
+        start_time = datetime.strptime(args.start, "%Y-%m-%d %H:%M:%S")
+        end_time = datetime.strptime(args.end, "%Y-%m-%d %H:%M:%S")
+        batch_download_by_range(start_time, end_time, args.force)
+    elif args.hours > 0:
+        # 按小时数下载
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=args.hours)
+        batch_download_by_range(start_time, end_time, args.force)
+    elif args.count > 0:
+        # 按数量下载
+        batch_download_by_count(count=args.count, force=args.force)
+    else:
+        # 默认下载最近24小时
+        parser.print_help()
+        print("\n使用默认配置：下载最近24小时的数据")
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=24)
+        batch_download_by_range(start_time, end_time, False)
+
+
+if __name__ == "__main__":
     try:
-        batch_download(count=args.count, force=args.force)
+        main()
     except KeyboardInterrupt:
         print("\n\n⚠️  用户中断下载")
         sys.exit(1)
@@ -271,7 +312,3 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
