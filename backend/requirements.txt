@@ -1,0 +1,55 @@
+# FastAPI核心依赖
+fastapi==0.100.0
+uvicorn[standard]==0.23.0
+python-multipart==0.0.6
+
+# 数据库
+sqlalchemy==2.0.0
+pymysql==1.1.0
+cryptography==41.0.0
+alembic==1.11.0
+
+# 认证
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+
+# 数据验证
+pydantic==2.0.0
+pydantic-settings==2.0.0
+email-validator==2.0.0
+
+# 任务队列
+celery==5.3.0
+redis==4.6.0
+
+# 数据处理
+pandas==2.0.0
+numpy==1.24.0
+opencv-python==4.8.0
+pillow==10.0.0
+
+# 预测模型
+prophet==1.1.4
+
+# 网络请求
+requests==2.31.0
+httpx==0.24.0
+
+# 工具库
+python-dateutil==2.8.2
+pytz==2023.3
+
+# 日志
+loguru==0.7.0
+
+# CORS
+python-cors==1.0.0
+
+# 监控
+psutil==5.9.0
+
+# 测试
+pytest==7.4.0
+pytest-asyncio==0.21.0
+pytest-cov==4.1.0

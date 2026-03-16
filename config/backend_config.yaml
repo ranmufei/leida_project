@@ -1,0 +1,139 @@
+# FastAPI后端配置文件
+
+app:
+  name: "气象雷达数据管理与预测平台"
+  version: "1.0.0"
+  description: "雷达数据自动化采集、处理、管理和预测平台"
+  debug: true
+  secret_key: "your-secret-key-change-in-production"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  reload: true
+  access_log: true
+
+database:
+  host: "localhost"
+  port: 3308
+  user: "admin"
+  password: "cqsyyxydxsyc6z"
+  name: "gfs_weather"
+  charset: "utf8mb4"
+  pool_size: 20
+  max_overflow: 40
+  pool_timeout: 30
+  pool_recycle: 3600
+  echo: false
+
+jwt:
+  secret_key: "your-jwt-secret-key-change-in-production"
+  algorithm: "HS256"
+  access_token_expire_minutes: 60
+  refresh_token_expire_days: 7
+
+download:
+  base_url: "https://image.data.cma.cn/vis/RAD__B0_CR"
+  interval_minutes: 6
+  max_retries: 3
+  timeout: 30
+  enable_resume: true
+  save_dir: "./data/raw"
+
+processing:
+  batch_size: 10
+  max_workers: 4
+  chunk_size: 1000
+  dbz_min_valid: -30
+  dbz_max_valid: 75
+  max_missing_ratio: 0.3
+  outlier_detection: true
+  interpolation_method: "linear"
+
+prediction:
+  optical_flow:
+    enabled: true
+    history_frames: 6
+    prediction_horizon: 360
+    pyr_scale: 1.2
+    levels: 3
+    winsize: 15
+    iterations: 3
+    poly_n: 5
+    poly_sigma: 1.2
+
+  prophet:
+    enabled: true
+    retrain_interval: "daily"
+    min_data_points: 168
+    training_window: 30
+    interval_width: 0.8
+    yearly_seasonality: true
+    weekly_seasonality: true
+    daily_seasonality: true
+
+  ensemble:
+    enabled: false
+    weights: [0.5, 0.5]
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 20
+
+celery:
+  broker_url: "redis://localhost:6379/0"
+  result_backend: "redis://localhost:6379/0"
+  task_serializer: "json"
+  result_serializer: "json"
+  accept_content: ["json"]
+  timezone: "Asia/Shanghai"
+  enable_utc: true
+
+logging:
+  dir: "./logs"
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_max_size: "10MB"
+  file_backup_count: 5
+
+cors:
+  origins: [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000"
+  ]
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+rate_limit:
+  enabled: true
+  per_minute: 60
+  per_hour: 1000
+  per_day: 10000
+
+cache:
+  enabled: true
+  ttl: 300
+  backend: "redis"
+
+monitoring:
+  enabled: true
+  alert_email: false
+  smtp_host: "smtp.example.com"
+  smtp_port: 587
+  smtp_username: ""
+  smtp_password: ""
+  email_from: "admin@example.com"
+  email_to: "admin@example.com"
+
+backup:
+  enabled: true
+  dir: "./backups"
+  retention_days: 30
+  schedule: "0 2 * * *"

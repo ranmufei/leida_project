@@ -1,0 +1,56 @@
+{
+  "download_session": {
+    "start_time": "2026-03-11T15:19:28.411707",
+    "end_time": "2026-03-11T15:19:51.452084",
+    "duration_seconds": 23.040377
+  },
+  "statistics": {
+    "total": 100,
+    "success": 7,
+    "failed": 0,
+    "skipped": 93
+  },
+  "database": {
+    "total_records": 15,
+    "success_records": 15,
+    "failed_records": 0,
+    "success_rate": 1.0
+  },
+  "latest_downloads": [
+    {
+      "filename": "radar_20260311142305.png",
+      "original_filename": null,
+      "observation_time": "2026-03-11T14:23:05",
+      "file_size": 16000,
+      "download_url": null
+    },
+    {
+      "filename": "radar_20260311141706.png",
+      "original_filename": null,
+      "observation_time": "2026-03-11T14:17:06",
+      "file_size": 16198,
+      "download_url": null
+    },
+    {
+      "filename": "radar_20260311141106.png",
+      "original_filename": null,
+      "observation_time": "2026-03-11T14:11:06",
+      "file_size": 16003,
+      "download_url": null
+    },
+    {
+      "filename": "radar_20260311140506.png",
+      "original_filename": null,
+      "observation_time": "2026-03-11T14:05:06",
+      "file_size": 16156,
+      "download_url": null
+    },
+    {
+      "filename": "radar_20260311135906.png",
+      "original_filename": null,
+      "observation_time": "2026-03-11T13:59:06",
+      "file_size": 16538,
+      "download_url": null
+    }
+  ]
+}

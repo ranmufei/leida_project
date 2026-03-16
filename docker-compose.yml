@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  # ========================================
+  # MySQL数据库
+  # ========================================
+  mysql:
+    image: mysql:8.0
+    container_name: radar_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: gfs_weather
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: cqsyyxydxsyc6z
+      TZ: Asia/Shanghai
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docs/database.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    networks:
+      - radar_network
+
+  # ========================================
+  # Redis缓存
+  # ========================================
+  redis:
+    image: redis:7-alpine
+    container_name: radar_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - radar_network
+
+  # ========================================
+  # FastAPI后端
+  # ========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: radar_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      - mysql
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - radar_network
+
+  # ========================================
+  # Celery Worker
+  # ========================================
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: radar_celery_worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - mysql
+      - redis
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    networks:
+      - radar_network
+
+  # ========================================
+  # Celery Beat (定时任务)
+  # ========================================
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: radar_celery_beat
+    restart: unless-stopped
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - mysql
+      - redis
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    networks:
+      - radar_network
+
+  # ========================================
+  # Vue.js前端
+  # ========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: radar_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - radar_network
+
+  # ========================================
+  # Nginx反向代理
+  # ========================================
+  nginx:
+    image: nginx:alpine
+    container_name: radar_nginx
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - radar_network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  radar_network:
+    driver: bridge
