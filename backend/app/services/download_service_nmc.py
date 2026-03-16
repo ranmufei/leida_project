@@ -3,8 +3,13 @@
 
 URL格式: https://image.nmc.cn/product/YYYY/MM/DD/RDCP/SEVP_AOC_RDCP_SLDAS3_ECREF_ACHN_L88_PI_YYYYMMDDHHmmssSSS.PNG
 
-注意：URL中的时间戳是UTC时间，需要转换为北京时间（UTC+8）存储
-图片更新间隔：6分钟
+时间规则:
+- URL中的时间戳是UTC时间，格式为17位数字: YYYYMMDDHHmmssSSS
+- 分钟必须是6的倍数: 00, 06, 12, 18, 24, 30, 36, 42, 48, 54
+- 秒固定为00，毫秒固定为000
+- 每6分钟一张图片
+
+存储时转换为北京时间（UTC+8）
 """
 import os
 import requests
@@ -41,12 +46,35 @@ class NMCRadarImageDownloader:
         print(f"💾 保存目录: {self.save_dir}")
         print(f"⏰ 更新间隔: {self.INTERVAL_MINUTES} 分钟")
 
+    def align_to_6_minutes(self, dt: datetime) -> datetime:
+        """
+        将时间对齐到6分钟边界
+
+        分钟必须是6的倍数: 00, 06, 12, 18, 24, 30, 36, 42, 48, 54
+
+        Args:
+            dt: 输入时间
+
+        Returns:
+            对齐后的时间（秒和微秒归零）
+        """
+        # 计算当前小时内的分钟数
+        minute = dt.minute
+
+        # 向下对齐到6的倍数
+        aligned_minute = (minute // self.INTERVAL_MINUTES) * self.INTERVAL_MINUTES
+
+        # 构造对齐后的时间
+        aligned = dt.replace(minute=aligned_minute, second=0, microsecond=0)
+
+        return aligned
+
     def build_url(self, utc_time: datetime) -> str:
         """
         根据UTC时间构建图片URL
 
         Args:
-            utc_time: UTC时间
+            utc_time: UTC时间（已对齐到6分钟边界）
 
         Returns:
             完整的图片URL
@@ -55,7 +83,8 @@ class NMCRadarImageDownloader:
         date_path = utc_time.strftime("%Y/%m/%d")
 
         # URL中的时间戳: YYYYMMDDHHmmssSSS (17位数字)
-        # 格式: 20260315223000000 (YYYYMMDDHHmmssSSS)
+        # 格式: 20260315080600000
+        #        YYYYMMDDHHmmss (14位) + 000 (3位) = 17位
         timestamp = utc_time.strftime("%Y%m%d%H%M%S") + "000"
 
         # 构建完整URL
@@ -112,9 +141,13 @@ class NMCRadarImageDownloader:
             start_utc = start_time
             end_utc = end_time
 
+        # 将起始时间对齐到6分钟边界
+        start_aligned = self.align_to_6_minutes(start_utc)
+
         # 生成UTC时间点
         time_points = []
-        current = start_utc
+        current = start_aligned
+
         while current <= end_utc:
             # 转换回北京时间存储
             beijing_time = self.utc_to_beijing(current)
@@ -158,9 +191,12 @@ class NMCRadarImageDownloader:
         Returns:
             (是否成功, 消息, 文件路径)
         """
-        # 转换为UTC时间构造URL
+        # 转换为UTC时间并对齐到6分钟边界
         utc_time = self.beijing_to_utc(beijing_time)
-        url = self.build_url(utc_time)
+        utc_aligned = self.align_to_6_minutes(utc_time)
+
+        # 使用对齐后的时间构造URL
+        url = self.build_url(utc_aligned)
 
         # 检查是否已下载
         if not force and self.is_file_downloaded(beijing_time):
@@ -171,6 +207,7 @@ class NMCRadarImageDownloader:
         local_path = self.save_dir / filename
 
         print(f"⬇️  下载中: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
+        print(f"   UTC时间: {utc_aligned.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"🌐 URL: {url}")
 
         # 尝试下载
